@@ -1,0 +1,282 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+### The NYPD Shootout incident
+
+##### In this report, I am going to analyze the NYPD Shootout incident that was reported from the year 2006 to 2022.
+
+Link: https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic
+
+##### This data set consists of 27132 observations with 21 variables including incidents that happened in cities, perpetrator's details, victim's details, date, time of the incident, and many more.
+
+##### For the report, I will be using various libraries and techniques to tidy the data, clean, visualization, and model for better analysis.
+
+### 1. Importing the Data:
+
+##### Firstly, importing the required packages and loading the libraries and then reading the data using csv file.
+
+```{r setup, include = FALSE}
+library('dplyr')
+library('tidyverse')
+library('caret') # prediction table
+library('pastecs')
+library('ggplot2') # plot
+library('plotrix') # plot
+library('DataExplorer') # visualization 
+library('gridExtra') # visualization
+library('caTools') # data splitting
+```
+
+Reading the csv file.
+
+```{r}
+data <- read_csv('~/Downloads/NYPD_Shooting_Incident_Data__Historic_.csv', show_col_types = FALSE)
+
+view(data)
+```
+
+Checking if data set is in data.frame format.
+
+```{r}
+is.data.frame(data)
+
+```
+
+By using the head, glimpse, and summary functions, we will get to know some information about the data like how many columns(including column names) and rows, data types, and statistical values on each column (not for the character data type).
+This data has 21 columns and 27132 rows. 
+
+```{r}
+head(data)
+
+glimpse(data)
+
+summary(data)
+```
+
+
+The use of colSums() function is to check the number of missing values(row) in the data. 
+LOC_OF_OCCUR_DESC, LOC_CLASSFCTN_DESC, LOCATION_DESC columns have more than 50% missing values.
+
+```{r, echo = FALSE}
+colSums(is.na(data))
+
+plot_missing(data)
+```
+
+### 2. Tidying and Transforming the data:
+
+Since the OCCUR_DATE column is in character data type, converting it into DATE format and also adding Month and Year columns to the data set to make it easier for further analysis and for visualization.
+I am changing the OCCUR_TIME column format from 24hrs(hms) to 12hrs(ims) for better graphs and analysis like whether a murder incident happened during the daytime/nighttime.
+
+```{r}
+
+data$OCCUR_DATE <- as.Date(data$OCCUR_DATE, '%m/%d/%Y')
+data$Month <- month(data$OCCUR_DATE)
+data$Year <- year(data$OCCUR_DATE)
+data$OCCUR_TIME <- format(strptime(data$OCCUR_TIME, format = '%H:%M:%S'), '%I:%M:%S %p')
+
+```
+
+Some columns have null values, blank values, and just some random numbers which may affect the analysis and graph. So will rename it and fill the missing values by UNKNOWN.
+
+```{r}
+
+data$PERP_AGE_GROUP[data$PERP_AGE_GROUP %in% c('(null)', NA, '224', '1020', '940', '1022')] <- NA
+data$PERP_RACE[data$PERP_RACE %in% c('(null)', NA)] <- 'UNKNOWN'
+data$PERP_SEX[data$PERP_SEX %in% c('(null)', NA, 'U')] <- 'UNKNOWN'
+data$LOCATION_DESC[data$LOCATION_DESC %in% c('(null)', NA)] <- 'UNKNOWN'
+data$VIC_SEX[data$VIC_SEX == 'U'] <- 'UNKNOWN'
+data$VIC_AGE_GROUP[data$VIC_AGE_GROUP == '1022'] <- NA
+data$STATISTICAL_MURDER_FLAG[data$STATISTICAL_MURDER_FLAG == TRUE] <- 1 
+data$STATISTICAL_MURDER_FLAG[data$STATISTICAL_MURDER_FLAG == FALSE] <- 0
+
+```
+
+Columns like LOC_OF_OCCUR_DESC and LOC_CLASSFCTN_DESC have more than 50% missing values and X_COORD_CD, Y_COORD_CD, and Lon_Lat columns are not helping for the analysis so I will drop a few columns which is not required for analysis and also dropping NA values and duplicated values.
+
+```{r}
+data <- subset(data, select = -c(LOC_OF_OCCUR_DESC, X_COORD_CD, Y_COORD_CD, Lon_Lat, LOC_CLASSFCTN_DESC))
+
+data <- na.omit(data)
+
+data <- data[!duplicated(data$INCIDENT_KEY),]
+
+```
+
+### 3.Exploratory Data Analysis / Visualizing Data:
+
+#### 1. Finding STATISTICAL_MURDER_FLAGs and JURISDICTION_CODE total percentage using Pie chart.
+
+```{r}
+par(mfrow = c(1, 2))
+
+table <- table(data$STATISTICAL_MURDER_FLAG)
+lab <- round(100*table/sum(table), 1)
+pie3D(table, labels = lab, explode = 0.1, main = 'Murder flag pie chart',  col = rainbow(length(table)))
+legend("topright", c('False', 'True'), cex = 0.5, fill = rainbow(length(table)))
+
+table <- table(data$JURISDICTION_CODE)
+lab <- round(100*table/sum(table), 1)
+pie3D(table, labels = lab, explode = 0.1, main = 'Jurisdiction code pie chart',  col = rainbow(length(table)))
+legend("topright", c('0', '1', '2'), cex = 0.5, fill = rainbow(length(table)))
+```
+
+The pie chart for STATISTICAL_MURDER_FLAG shows that 17.4% of cases were murder flags out of total cases and the highest number of cases were based on JURISDICTION_CODE code 0 with 83% followed by code 2 with 16.7%.
+
+```{r, echo = FALSE}
+## Checking perpetuates age, race using BORO:
+
+murder <- function(var){
+  data |>
+  select(BORO, PERP_AGE_GROUP, PERP_RACE, PERP_SEX, STATISTICAL_MURDER_FLAG) |>
+  filter(STATISTICAL_MURDER_FLAG == TRUE) |>
+filter(BORO == var)
+}
+
+brooklyn <- murder('BROOKLYN')
+```
+
+#### 2. Since most of the incidents took place in Brooklyn, will consider the perpetrator's age only in Brooklyn city with the number of murder cases.
+
+```{r}
+table(data$BORO)
+```
+
+
+```{r}
+p_age <- ggplot(data = brooklyn, mapping = aes(x = fct_infreq(PERP_AGE_GROUP), fill = PERP_SEX)) +
+     geom_bar(data = brooklyn, color = 'black') +
+     labs(title = 'BAR PLOT') + xlab('perpetrator age') + ylab('COUNT') + coord_flip()
+
+p_race <- ggplot(data = brooklyn, mapping = aes(x = fct_infreq(PERP_RACE), fill = PERP_SEX)) +
+     geom_bar(data = brooklyn, color = 'black') +
+     labs(title = 'BAR PLOT') + xlab('perpetrator race') + ylab('COUNT') + coord_flip()
+
+grid.arrange(p_age, p_race)
+
+```
+
+From the graph, we can say that most murder incidents happened in Brooklyn.
+344 shooting cases with perpetrators aged 25-44 years followed by 18-24 years with 300 cases in Brooklyn.
+Men are the perpetrators in the vast majority of those shooting incidents in Brooklyn.
+In Brooklyn, 644 reports say that the Black Race was the majority of perpetrators who were responsible for the incident followed by White Hispanics with 64 cases.
+
+#### 3. Finding at what time most of the shooting incidents took place every year:
+
+```{r}
+ murder_time <- function(var){ data |>
+  select(OCCUR_TIME, Year, STATISTICAL_MURDER_FLAG) |> 
+    filter(str_detect(data$OCCUR_TIME, var)) |> 
+     filter(STATISTICAL_MURDER_FLAG == 1)
+}
+
+am <- murder_time('AM')
+pm <- murder_time('PM')
+
+morning <- ggplot(data = am, mapping = aes(x = Year))+
+  geom_bar() +
+     labs(title = 'Murder cases: Morning') + xlab('Year') + ylab('count') + coord_flip()
+  
+evening <- ggplot(data = pm, mapping = aes(x = Year))+
+  geom_bar() +
+     labs(title = 'Murder cases: Evening') + xlab('Year') + ylab('count') + coord_flip()
+  
+grid.arrange(morning, evening)
+```
+
+So based on the graph, in the year 2006 the highest number of murder cases were reported at morning(AM) followed by the year 2010 and year 2021 but very less cases were reported in the year 2017 to the year 2019.
+Similarly in the years 2010 and 2021, the highest number of cases were reported in the evening(PM) time slot but very less cases were reported in the year 2017 to the year 2019 as well.
+
+
+### 4. Data Analyzing:
+
+Let us check the total number of cases and number of murder cases in each year and compare the results.
+While looking at the plot of total shooting cases reported from the year 2006 to the year 2022 and death(murder) cases, the total number of cases was reported less in the year from 2016 to the year 2019, but murder cases were pretty consistent.
+
+```{r}
+year_df <- data |> 
+     group_by(Year) %>% 
+    summarise(death = sum(STATISTICAL_MURDER_FLAG), total_cases = n()) 
+
+#year_df
+
+ggplot(year_df)+
+geom_line(aes(x = Year, y = total_cases, color = 'total cases'))+
+geom_point(aes(x = Year, y = total_cases))+
+geom_line(aes(x = Year, y = death, color = 'murder cases'))+
+geom_point(aes(x = Year, y = death))+
+labs(title = 'Total shooting cases v/s murder cases in years')+ theme_classic()
+```
+
+
+### 5. Data Modeling:
+
+For modeling, we will classify based on the age groups of the perpetrators and whether they have been convicted of crimes.
+
+Will split the data set into 80% training data and 20% testing for the analysis. We will consider training data for the modeling and will use testing data for the prediction.
+
+```{r}
+set.seed(123)
+
+split <- sample.split(data$STATISTICAL_MURDER_FLAG, SplitRatio = 0.8)
+
+training <- subset(data, split == TRUE)
+testing <- subset(data, split == FALSE)
+
+```
+
+##### Here I am considering the STATISTICAL_MURDER_FLAG column as the target variable and the PERP_AGE_GROUP columns as response variables.
+
+##### Here I will fit the logistic regression model with a binomial as a parameter.
+
+```{r}
+
+model <- glm(STATISTICAL_MURDER_FLAG ~ PERP_AGE_GROUP, data = training, family = binomial(link = 'logit'))
+summary(model)
+
+exp(coef(model)['PERP_AGE_GROUP18-24'])
+exp(coef(model)['PERP_AGE_GROUP25-44'])
+
+```
+
+From the summary of the model, the coef value for the age group <18 is less than 0, and the probability of murdering someone decreases with that age. But all other age groups were greater than 0, which means the probability of involving in the murder was higher.
+
+Also, using the expo() function, age group 18-24, the probability of involving in the murder was around 16%, and for the 25-44 age group, it was around 71%
+
+##### Now, we will predict the model using our testing data set. And adding a prediction column to the testing data to check the predicted values with the actual murder flag values in the STATISTICAL_MURDER_FLAG column.
+
+```{r}
+
+pred = predict(model, testing, type = 'response')
+
+pred <- ifelse(pred  > 0.5, 1, 0)
+
+testing$prediction <- pred
+
+table(testing$STATISTICAL_MURDER_FLAG)
+table(testing$prediction)
+
+
+matrix <- confusionMatrix(as.factor(testing$prediction), as.factor(testing$STATISTICAL_MURDER_FLAG))
+matrix$overall['Accuracy']
+```
+```{r}
+
+new = predict(model, newdata = data.frame(PERP_AGE_GROUP = '45-64'), type = 'response')
+new
+
+```
+
+### 6. Conclusion:
+
+As expected, most of the data points for the STATISTICAL_MURDER_FLAG fall under value 0(FALSE), so the model predicts the results based on the dominant class. That's the reason I got all 2553 predicted results under 0 value. I think the data set is highly imbalanced, with noisy features and missing values. Further analysis, new techniques and over sampling of the model are needed.
+
+
+### 7.Biases:
+
+Also, handling the missing values is needed and fitting poor model would also result in model performance. In my case, I have used PERP_AGE_GROUP as response variable, which has many levels.
+
+
+GitHub Link: https://github.com/shriyutha/NYPD-Shootout-incident
