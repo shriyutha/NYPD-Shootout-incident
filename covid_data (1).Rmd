@@ -1,0 +1,437 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## NEW YORK TIMES COVID-19 DATA REPORT:
+
+###### COVID Data Set has few https links with csv file format and was downloaded from Johns Hopkins website.
+
+#### Links: https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series
+
+##### Basically this Covid data set has a few https link including world confirmed cases, recoverd cases, and confirmed deaths, and  US confirmed cases and death and overall population. And this data set has variables including total cases, confirmed deaths, confirmed cases date, population, country, states amd many more.
+
+#### The main goal of this project is to provide a better understanding of covid_19 trends, predictive models for future cases and evaluation of the cases progression.
+
+##### For the report, I will be using various libraries and techniques to tidying the data, cleaning, visualization and modeling for better analysis.
+
+# 1. Importing the Data:
+
+Firstly, importing the required packages and loading the libraries and then reading the data using csv file.
+
+```{r setup, include = FALSE}
+
+library('dplyr')
+library('tidyverse')
+library('pastecs')
+library('ggplot2') # plot
+library('plotrix') # plot
+library('DataExplorer') # visualization 
+library('gridExtra') # visualization
+library('caTools') # data splitting
+library('lubridate') # for date and time
+```
+
+
+Reading https links using string concatenation and then reading csv file.
+
+```{r, echo = FALSE}
+
+url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+l1 <- "time_series_covid19_confirmed_US.csv"
+l2 <- "time_series_covid19_confirmed_global.csv"
+l3 <- "time_series_covid19_deaths_US.csv"
+l4 <- "time_series_covid19_deaths_global.csv"
+l5 <- "time_series_covid19_recovered_global.csv"
+
+data <- str_c(url, c(l1, l2, l3, l4, l5))
+
+global_cases <- read_csv(data[2])
+global_death <- read_csv(data[4])
+us_cases <- read_csv(data[1])
+us_death <- read_csv(data[3])
+global_recovered <- read_csv(data[5])
+```
+
+
+Checking if data set is in data.frame format.
+
+```{r}
+
+is.data.frame(global_cases)
+is.data.frame(global_death)
+is.data.frame(us_cases)
+is.data.frame(us_death)
+is.data.frame(global_recovered)
+
+```
+
+By using head, glimpse and summary function, we will get to know the some information about the data like how many columns(including column names) and rows, data types and statistical values on each columns(not for character data type).
+
+glimpse(global_cases)
+glimpse(global_death)
+glimpse(us_cases)
+glimpse(us_death)
+glimpse(recovered)
+
+
+
+# 2. Tidying and Transforming the data:
+
+Tidying the data set: Using pivot_longer to get new columns Date and Total Recovered cases, and also renaming few columns names and converting Date column into date format for global data set.
+
+```{r, echo = FALSE}
+
+global_recovered <- global_recovered |>
+pivot_longer(cols = -c('Province/State', 'Country/Region'), names_to = 'Date', values_to = 'Recovered', values_drop_na = TRUE) |>
+rename('Province_State' = 'Province/State', 'Country_Region' = 'Country/Region') |>
+mutate(Date = as.Date(Date, '%m/%d/%Y')) |>
+select('Country_Region', 'Province_State', 'Date', 'Recovered') |>
+filter(Recovered > 0)
+
+global_recovered
+
+```
+
+
+Tidying the data set: Using pivot_longer to get new columns Date and Total Covid Cases, and also renaming few columns names and converting Date column into date format for global dataset.
+
+```{r, echo = FALSE}
+
+global_cases <- global_cases |>
+pivot_longer(cols = -c('Province/State', 'Country/Region'), names_to = 'Date', values_to = 'Cases', values_drop_na = TRUE) |>
+rename('Province_State' = 'Province/State', 'Country_Region' = 'Country/Region') |>
+mutate(Date = as.Date(Date, '%m/%d/%Y')) |>
+select('Country_Region', 'Province_State', 'Date', 'Cases') |>
+filter(Cases > 0)
+
+global_cases
+
+```
+
+
+Tidying the data set: Using pivot_longer to get new columns Date and Total Covid Deaths, and also renaming few columns names and converting Date column into date format for global data set.
+
+```{r, echo = FALSE}
+
+global_death <- global_death |>
+pivot_longer(cols = -c('Province/State', 'Country/Region'), names_to = 'Date', values_to = 'Deaths', values_drop_na = TRUE) |>
+rename('Province_State' = 'Province/State', 'Country_Region' = 'Country/Region') |>
+mutate(Date = as.Date(Date, '%m/%d/%Y')) |>
+select('Country_Region', 'Province_State', 'Date', 'Deaths') |>
+filter(Deaths > 0)
+
+global_death
+
+```
+
+
+Tidying the data set: Using pivot_longer to get new columns Date and Total Covid Cases in US data set, and also renaming few columns names and converting Date column into date format.
+
+```{r, echo = FALSE}
+
+us_cases <- us_cases |>
+pivot_longer(cols = -c(UID:Combined_Key), names_to = 'Date', values_to = 'Cases', values_drop_na = TRUE) |>
+mutate(Date = mdy(Date)) |>
+rename('Long' = 'Long_') |>
+select('Country_Region', 'Province_State', 'Date', 'Cases', 'Lat', 'Long') |>
+filter(Cases > 0)
+
+us_cases
+
+```
+
+
+Tidying the data set: Using pivot_longer to get new columns Date and Total Covid Deaths in US data set, and also renaming few columns names and converting Date column into date format.
+
+```{r, echo = FALSE}
+ 
+us_death <- us_death |>
+pivot_longer(cols = -c(UID:Population), names_to = 'Date', values_to = 'Deaths', values_drop_na = TRUE) |>
+mutate(Date = mdy(Date)) |>
+rename('Long' = 'Long_') |>
+select('Country_Region', 'Province_State', 'Date', 'Deaths', 'Lat', 'Long') |>
+filter(Deaths > 0)
+
+us_death
+
+```
+
+
+Combing the both US confirmed cases and US death data set to one data called US, using full_join function.
+
+```{r, echo = FALSE}
+
+US <- us_cases |>
+  full_join(us_death) |>
+  mutate(Deaths = if_else(is.na(Deaths), 0, Deaths)) |>
+  mutate(Cases = if_else(is.na(Cases), 0, Cases))
+
+US
+
+```
+
+
+Combing the both global confirmed cases, recovered cases, and global death data set to one data called global, using full_join function.
+
+```{r, echo = FALSE}
+
+global <- global_cases |>
+  full_join(global_death) |>
+  full_join(global_recovered) |>
+  mutate(Deaths = as.integer(if_else(is.na(Deaths), 0, Deaths)),
+         Cases = as.integer(if_else(is.na(Cases), 0, Cases)),
+         Recovered = as.integer(if_else(is.na(Recovered), 0, Recovered)))
+
+
+global <-  global[-c(1:8), ]
+global
+```
+
+
+The use of colSums() function is to check the number of missing values(row) in the data.
+
+```{r, echo = FALSE}
+
+colSums(is.na(US))
+plot_missing(US)
+
+colSums(is.na(global))
+plot_missing(global)
+
+```
+
+Creating month, year and day from Date column for better graph and analysis.
+
+```{r}
+US <- US |>
+mutate(Year = year(Date), Month = month(Date), Day = day(Date))
+
+
+global <- global|>
+mutate(Year = year(Date), Month = month(Date),  Day = day(Date))
+
+```
+
+Dropping NA values.
+
+```{r}
+
+global <- na.omit(global)
+
+US <- na.omit(US)
+
+```
+
+
+# 3.Exploratory Data Analysis / Visualizing Data:
+
+1. Finding top US states with highest number of Covid cases and Covid deaths. And visualizing both with the Bar graph.
+
+```{r}
+
+# Visualizing the highest number of Covid cases and highest confirmed Covid deaths:
+state_cases <- US |>
+  group_by(Province_State, Year) |>
+  summarise(Cases = sum(Cases)) |>
+  select(Province_State, Cases, Year) |>
+  arrange(Cases) |>
+  filter(Cases > 0)
+
+top_cases <- tail(state_cases, 25)
+highest_cases <- ggplot(data = top_cases) +
+    geom_bar(mapping = aes(x = Cases, y = Province_State, fill = Year), stat = 'identity') +
+    labs(title = 'US states with highest number of COVID cases') 
+
+
+state_deaths <- US |>
+  group_by(Province_State, Year) |>
+  summarise(Deaths = sum(Deaths)) |>
+  select(Province_State, Deaths, Year) |>
+  arrange(Deaths) |>
+  filter(Deaths > 0)
+
+top_deaths <- tail(state_deaths, 25)
+highest_deaths <- ggplot(data = top_deaths) +
+    geom_bar(mapping = aes(x = Deaths, y = Province_State, fill = Year), stat = 'identity') +
+    labs(title = 'US states with highest number of COVID deaths') 
+
+grid.arrange(highest_cases, highest_deaths)
+
+```
+According to the graph, California(2022) has highest number of cases followed by Texas(2022) and Florida(2022) and again California(2022) has highest number of deaths followed by New York(2022) and Texas(2022).
+
+
+2. Finding Total covid cases and total deaths and total recovery from the covid virus using Pie chart.
+
+
+```{r}
+
+total_data <- global |>
+  group_by(Province_State) |>
+  summarise(Total_Cases = sum(Cases, na.rm = TRUE),
+            Total_Deaths = sum(Deaths, na.rm = TRUE),
+            Total_Recovered = sum(Recovered, na.rm = TRUE))
+
+new_data <- colSums(total_data[, c("Total_Cases", "Total_Deaths", "Total_Recovered")])
+new_data
+
+table <- names(new_data)
+lab <- round(100*new_data/sum(new_data), 1)
+pie(new_data, labels = lab, main = 'Total count', col = rainbow(length(new_data)), cex = 0.7)
+legend("topleft", table, fill = rainbow(length(table)))
+
+```
+
+Base on the chart, The total cases were 7620301104(98.3%), and the total deaths due to covid were 52778660(1%) from the total percentage of the cases, and 77337693(0.7%) cases was completely recovered from the virus.
+
+
+
+3. Finding World's highest number of Covid cases, recovered, and highest confirmed Covid deaths and visualizing both with the Bar graph.
+
+```{r}
+
+# Visualizing the highest number of Covid cases and highest confirmed Covid deaths:
+world_cases <- global |>
+  group_by(Country_Region, Year) |>
+  summarise(Cases = sum(Cases), .groups = 'drop') |>
+  select(Country_Region, Cases, Year) |>
+  arrange(Cases) |>
+    filter(Cases > 0)
+
+top_cases <- tail(world_cases, 25)
+highest_cases <- ggplot(data = top_cases) +
+    geom_bar(mapping = aes(x = Cases, y = Country_Region, fill = Year), stat = 'identity') +
+    labs(title = 'Countries with highest number of COVID cases') 
+
+
+world_deaths <- global |>
+  group_by(Country_Region, Year) |>
+  summarise(Deaths = sum(Deaths), .groups = 'drop') |>
+  select(Country_Region, Deaths, Year) |>
+  arrange(Deaths) |>
+    filter(Deaths > 0)
+
+top_deaths <- tail(world_deaths, 25)
+highest_deaths <- ggplot(data = top_deaths) +
+    geom_bar(mapping = aes(x = Deaths, y = Country_Region, fill = Year), stat = 'identity') +
+    labs(title = 'Countries with highest number of COVID confirmed deaths') 
+
+
+world_recovered <- global |>
+  group_by(Country_Region, Year) |>
+  summarise(Recovered = sum(Recovered), .groups = 'drop') |>
+  select(Country_Region, Recovered, Year) |>
+  arrange(Recovered) |>
+    filter(Recovered > 0)
+
+top_recovered <- tail(world_recovered, 25)
+highest_recovered <- ggplot(data = top_recovered) +
+    geom_bar(mapping = aes(x = Recovered, y = Country_Region, fill = Year), stat = 'identity') +
+    labs(title = 'Countries with highest number of COVID recoveries') 
+
+grid.arrange(highest_cases, highest_deaths, highest_recovered)
+
+```
+
+According to the graph, Australia(2022) has highest number of cases followed by Canada(2022).
+And Canada(2022) and again China(2022) has highest number of deaths followed by Australia(2022). 
+China(2020) has highest number of cases followed by France(2021).
+
+
+
+4. Visualizing the World Map with total number of cases and total confirmed cases using tmap function:
+
+```{r}
+
+library(tmap)
+data(World)
+
+Global <- global |>
+  group_by(Country_Region) |>
+  summarize(Total_cases = sum(Cases))
+
+# Reading World data from tmap:
+World$Country_Region <- World$name
+
+# Combining World data to global data:
+Map <- left_join(World, Global, by = 'Country_Region')
+
+Map$Total_cases[is.na(Map$Total_cases)] <- 0
+
+# Visualizing the World Map:
+options(repr.plot.width = 20, repr.plot.height = 20)
+
+case = ggplot(data = Map) + geom_sf(aes(fill = Total_cases)) +
+  ggtitle('World Map: Total Confirmed Covid Cases') 
+
+
+grid.arrange(case)
+
+```
+
+
+# 4. Data Analyzing:
+
+In order to analyze the data, going to add new column/variable called 'Case_fatality_rate' to the global data, only with Canada country
+
+* Case_fatality_rate measures the percentage rate of confirmed deaths from the Covid-19.
+
+```{r}
+
+# Measuring Case_fatality_rate percentage for US:
+global_rate <- global |>
+  group_by(Country_Region, Date) |>
+  summarise(Deaths = sum(Deaths), Cases = sum(Cases), Recovered = sum(Recovered), .groups = 'drop') |>
+  mutate(Case_fatality_rate = (Deaths/Cases) * 100) |>
+  filter(Country_Region == 'Canada', Case_fatality_rate > 0) 
+
+  ggplot(data = global_rate) +
+  geom_point(aes(x = Deaths, y = Case_fatality_rate, color = 'Deaths')) +
+  geom_point(aes(x = Cases, y = Case_fatality_rate, color = 'Cases')) +
+  labs(title = 'Case_fatality_rate v/s Number of deaths') 
+  
+```
+
+
+# 5. Data Modeling:
+
+Linear Model for modeling the data using 'lm' function, with 'Case_fatality_rate'(independent variable) to predict the new values based on confirmed "Deaths'(depending variable) variable and predicting the new values of Case_fatality_rate.
+Linear model: y = mx + b, where b = intercept and m = co-efficients.
+
+```{r}
+
+set.seed(123)
+
+# Linear model:
+reg <- lm(Case_fatality_rate ~ Deaths , data = global_rate)
+summary(reg)
+
+# Predicting new values:
+pred <- predict(reg)
+
+global_rate <- global_rate |>
+  mutate(prediction = pred)
+
+# Visualizing actual and predicted values:
+colors <- c('Actual Values' = 'blue', 'Predicted Values' = 'red')
+ggplot(data = global_rate) +
+  geom_point(mapping = aes(y = Case_fatality_rate, x = Deaths, color = 'Actual Values')) +
+  geom_point(mapping = aes(y = prediction, x = Deaths, color = 'Predicted Values')) +
+  labs(title = 'Actual and Predicted values of the model', color = 'Legend') +
+  scale_color_manual(values = colors)
+
+```
+
+# 6. Conclusion:
+
+From the modeling: Adjusted R-squared = 0.5422, P_value is less than 0.05 means for the model, which is less than 0.05, indicates that the Case Fatality Rate is a statistically significant predictor of the Deaths and R-squared value is 0.5427 means that approximately 54.27% of the values in Deaths can be explained by the Case Fatality Rate.
+This can be used to measure and predict deaths based on Case Fatality Rate with 54% but I would really interested to learn and implements future improvements to this model.
+
+
+# 7.Biases:
+
+This data sets is highly imbalanced and has missing values. Handling the missing values in a proper manner is needed and fitting poor model would also result in model performance. And also this data set has geographic biases, which focuses mostly US, Canada or other developed countries.
+
